@@ -1,0 +1,46 @@
+<!-- templates/dashboard.html -->
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>App Dashboard</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Roboto, "Helvetica Neue", Arial; margin: 16px; }
+    .panel { border-radius:8px; padding:12px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); margin-bottom:12px; }
+    textarea { width:100%; min-height:120px; font-family:inherit; }
+    button { padding:8px 12px; margin-right:8px; border-radius:6px; }
+    .presets button { margin:4px 4px 4px 0; }
+    pre { background:#0f1720; color:#d1d5db; padding:12px; overflow:auto; max-height:360px; white-space:pre-wrap; }
+  </style>
+</head>
+<body>
+  <h1>App Dashboard</h1>
+
+  <div class="panel">
+    <h3>Prompt Editor</h3>
+    <div class="presets">
+      <strong>Presets:</strong>
+      {% for key, val in presets.items() %}
+        <button data-preset="{{ key }}" class="btn-preset">{{ key.replace('_', ' ').title() }}</button>
+      {% endfor %}
+    </div>
+    <p>Current prompt (edit and Save):</p>
+    <textarea id="prompt-text"></textarea>
+    <div style="margin-top:8px;">
+      <button id="save-btn">Save Prompt</button>
+      <button id="reload-btn">Reload from disk</button>
+    </div>
+    <div id="save-msg" style="margin-top:8px;color:green;"></div>
+  </div>
+
+  <div class="panel">
+    <h3>App Logs</h3>
+    <label>Lines: <input id="log-lines" type="number" value="200" style="width:80px" /></label>
+    <button id="refresh-logs">Refresh</button>
+    <pre id="logs-pre">Loading logs...</pre>
+  </div>
+
+  <script src="/dashboard/static/dashboard.js"></script>
+</body>
+</html>
