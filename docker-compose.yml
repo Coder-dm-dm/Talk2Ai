@@ -5,7 +5,7 @@ services:
     ports:
       - "5000:5000"
     environment:
-      - GOOGLE_GENAI_API_KEY="AIzaSyCOcYyAff14TgLBWs1XN1lU3DJxAi4fY5g"
+      - GOOGLE_GENAI_API_KEY=
       - PROMPT_FILE=/data/prompt_store.json
       - APP_LOG_FILE=/data/app.log
     volumes:
