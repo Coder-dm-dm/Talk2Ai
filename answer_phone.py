@@ -1,71 +1,72 @@
-# app.py -- Step 4: Error Handling & Loop
+# app.py — Smart Learning Voice Assistant v2 (Flask + Twilio + Gemini)
+
 import os
 import re
 import logging
+from logging.handlers import RotatingFileHandler
 from flask import Flask, request
 from twilio.twiml.voice_response import VoiceResponse, Gather
 from google import genai
-# near top of app.py
-from dashboard import read_prompt
-import logging
-from logging.handlers import RotatingFileHandler
+from dashboard import read_prompt, bp as dashboard_bp
 
-
-
+# ---------------------------------------------
+# Flask + Logging setup
+# ---------------------------------------------
 app = Flask(__name__)
-# after app = Flask(__name__)
 
-LOG_FILE = os.environ.get("APP_LOG_FILE", "app.log")
+LOG_FILE = "app.log"
 handler = RotatingFileHandler(LOG_FILE, maxBytes=5*1024*1024, backupCount=2)
 handler.setFormatter(logging.Formatter('%(asctime)s %(levelname)s %(name)s %(message)s'))
 handler.setLevel(logging.INFO)
 app.logger.addHandler(handler)
-app.config["APP_LOG_FILE"] = LOG_FILE
-from dashboard import bp as dashboard_bp
-app.register_blueprint(dashboard_bp)
 
 logging.basicConfig(level=logging.INFO)
 
-GENAI_API_ENV = "GOOGLE_GENAI_API_KEY"
-MODEL_NAME = "gemma-3-27b-it"
+# ---------------------------------------------
+# Global runtime configuration
+# ---------------------------------------------
+MODEL_NAME = "gemma-3-27b-it"     # Gemma 27B
+global_api_key = None             # Will be set at startup by user input
+
+# Register dashboard blueprint
+app.register_blueprint(dashboard_bp)
 
 # ---------------------------------------------
-# Helper: GenAI client
+# Helper: Gemini Client
 # ---------------------------------------------
 def get_genai_client():
-    api_key = os.environ.get(GENAI_API_ENV)
-    if not api_key:
-        raise RuntimeError(f"Missing {GENAI_API_ENV}")
-    return genai.Client(api_key=api_key)
+    if not global_api_key:
+        raise RuntimeError("Gemini API key is missing. Please restart and input it.")
+    return genai.Client(api_key=global_api_key)
 
 # ---------------------------------------------
-# Helper: LLM call
+# Helper: Ask the AI Teacher
 # ---------------------------------------------
 def ask_teacher(prompt: str) -> str:
-    client = get_genai_client()
     try:
+        client = get_genai_client()
         resp = client.models.generate_content(model=MODEL_NAME, contents=prompt)
         if not resp or not getattr(resp, "text", None):
-            raise RuntimeError("Empty response from model")
+            raise RuntimeError("Empty response from Gemini.")
         return resp.text.strip()
     except Exception as e:
-        logging.exception("Gemma API call failed: %s", e)
+        logging.exception("Gemini API call failed: %s", e)
         return None
 
 # ---------------------------------------------
 # Helper: Text-to-speech pacing
 # ---------------------------------------------
 def tts_speak(resp: VoiceResponse, text: str):
+    """Speak text slowly and clearly with pauses between sentences."""
     text = re.sub(r"\s+", " ", text)
     sentences = re.split(r"(?<=[.!?]) +", text)
     for s in sentences:
-        if not s.strip():
-            continue
-        resp.say(s.strip(), voice="alice", language="en-US")
-        resp.pause(length=1.0)
+        if s.strip():
+            resp.say(s.strip(), voice="alice", language="en-US")
+            resp.pause(length=1.0)
 
 # ---------------------------------------------
-# Helper: Start a new question loop
+# Helper: Follow-up prompt
 # ---------------------------------------------
 def ask_follow_up(resp: VoiceResponse, prompt_msg="Would you like to ask another question?"):
     gather = Gather(
@@ -81,7 +82,7 @@ def ask_follow_up(resp: VoiceResponse, prompt_msg="Would you like to ask another
     resp.hangup()
 
 # ---------------------------------------------
-# Route: First inbound call
+# Route: Initial call
 # ---------------------------------------------
 @app.route("/", methods=["GET", "POST"])
 def inbound_call():
@@ -95,17 +96,17 @@ def inbound_call():
     )
     gather.say(
         "Hello again! I’m your learning assistant teacher. "
-        "Ask your question now",
+        "Ask your question now.",
         voice="alice", language="en-US"
     )
-    
+
     resp.append(gather)
     resp.say("I didn’t hear a question. Goodbye!", voice="alice")
     resp.hangup()
     return str(resp)
 
 # ---------------------------------------------
-# Route: Handle initial question
+# Route: Handle the student's first question
 # ---------------------------------------------
 @app.route("/gather_response", methods=["POST"])
 def gather_response():
@@ -119,14 +120,17 @@ def gather_response():
 
     logging.info(f"Student asked: {speech_text}")
 
+    # Friendly "thinking" feedback
+    resp.say("Hmm, let me think for a second.", voice="alice")
+    resp.pause(length=1.2)
+
     base_prompt = read_prompt() or (
-    "You are a kind, encouraging teacher speaking to a young student over the phone. "
-    "Explain concepts clearly and slowly in one or two short sentences. "
-    "Avoid long words. End with a gentle encouragement like 'Good job!' or 'Keep learning!'. "
+        "You are a kind, encouraging teacher speaking to a young student over the phone. "
+        "Explain concepts clearly and slowly in one or two short sentences. "
+        "Avoid long words. End with a gentle encouragement like 'Good job!' or 'Keep learning!'."
     )
 
     prompt = f"{base_prompt} Student asked: \"{speech_text}\""
-
 
     answer = ask_teacher(prompt)
     if not answer:
@@ -148,19 +152,21 @@ def gather_followup():
     speech_text = (request.values.get("SpeechResult") or "").lower().strip()
     resp = VoiceResponse()
 
-    # If user says “no”, end call
     if any(phrase in speech_text for phrase in ["no", "nope", "nothing", "bye"]):
         resp.say("Okay! Goodbye and keep learning!", voice="alice")
         resp.hangup()
         return str(resp)
 
-    # If empty, end politely
     if not speech_text:
         resp.say("I didn’t catch that. Let’s stop here for now. Goodbye!", voice="alice")
         resp.hangup()
         return str(resp)
 
     logging.info(f"Follow-up question: {speech_text}")
+
+    # Friendly "thinking" feedback for follow-ups
+    resp.say("Hmm, let me think about that question too.", voice="alice")
+    resp.pause(length=1.2)
 
     prompt = (
         "Continue acting as a friendly teacher. "
@@ -181,9 +187,40 @@ def gather_followup():
     return str(resp)
 
 # ---------------------------------------------
-# Run the app
+# Application Entry Point (persistent API key)
 # ---------------------------------------------
+def load_api_key():
+    """Load the Gemini API key from key.txt, or ask the user if missing."""
+    key_file = "key.txt"
+
+    if os.path.exists(key_file):
+        with open(key_file, "r") as f:
+            api_key = f.read().strip()
+            if api_key:
+                logging.info("✅ Gemini API key loaded from key.txt")
+                return api_key
+
+    # If file missing or empty, ask user
+    api_key = input("🔑 Enter your Gemini API key: ").strip()
+    if not api_key:
+        logging.error("❌ API key not provided. Exiting.")
+        exit(1)
+
+    # Save key for next run
+    with open(key_file, "w") as f:
+        f.write(api_key)
+    logging.info("✅ Gemini API key saved to key.txt")
+
+    return api_key
+
+
 if __name__ == "__main__":
-    if not os.environ.get(GENAI_API_ENV):
-        logging.warning("⚠️ Missing GOOGLE_GENAI_API_KEY environment variable.")
-    app.run(debug=True, host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+    try:
+        # Assign directly; no global statement needed at top-level
+        global_api_key = load_api_key()
+    except Exception as e:
+        logging.exception("Error while loading API key.")
+        exit(1)
+
+    port = int(os.environ.get("PORT", 5000))
+    app.run(debug=True, host="0.0.0.0", port=port)

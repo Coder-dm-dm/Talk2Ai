@@ -1,46 +1,170 @@
-<!-- templates/dashboard.html -->
 <!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>App Dashboard</title>
   <style>
-    body { font-family: system-ui, -apple-system, Roboto, "Helvetica Neue", Arial; margin: 16px; }
-    .panel { border-radius:8px; padding:12px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); margin-bottom:12px; }
-    textarea { width:100%; min-height:120px; font-family:inherit; }
-    button { padding:8px 12px; margin-right:8px; border-radius:6px; }
-    .presets button { margin:4px 4px 4px 0; }
-    pre { background:#0f1720; color:#d1d5db; padding:12px; overflow:auto; max-height:360px; white-space:pre-wrap; }
+    :root {
+      --bg: #f9fafb;
+      --fg: #111827;
+      --card: #ffffff;
+      --accent: #2563eb;
+      --log-bg: #0f172a;
+      --log-fg: #e2e8f0;
+    }
+    [data-theme="dark"] {
+      --bg: #0f172a;
+      --fg: #f3f4f6;
+      --card: #1e293b;
+      --accent: #3b82f6;
+      --log-bg: #1e293b;
+      --log-fg: #e5e7eb;
+    }
+
+    body {
+      font-family: system-ui, -apple-system, Roboto, "Helvetica Neue", Arial;
+      background: var(--bg);
+      color: var(--fg);
+      margin: 0;
+      padding: 16px;
+      transition: background 0.3s, color 0.3s;
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 24px;
+    }
+
+    h1 {
+      font-size: 1.5rem;
+      margin: 0;
+    }
+
+    .theme-toggle {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      padding: 8px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.9rem;
+    }
+
+    .panel {
+      background: var(--card);
+      border-radius: 10px;
+      padding: 16px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.08);
+      margin-bottom: 20px;
+      transition: background 0.3s;
+    }
+
+    textarea {
+      width: 100%;
+      min-height: 140px;
+      font-family: inherit;
+      font-size: 0.95rem;
+      padding: 8px;
+      border-radius: 6px;
+      border: 1px solid #d1d5db;
+      background: var(--bg);
+      color: var(--fg);
+      resize: vertical;
+    }
+
+    button {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      padding: 8px 14px;
+      margin: 6px 6px 6px 0;
+      cursor: pointer;
+      font-size: 0.9rem;
+      transition: background 0.2s, transform 0.1s;
+    }
+    button:hover { background: #1d4ed8; }
+    button:active { transform: scale(0.98); }
+
+    .presets {
+      margin-bottom: 8px;
+    }
+
+    .presets button {
+      background: #e5e7eb;
+      color: #111827;
+    }
+
+    [data-theme="dark"] .presets button {
+      background: #334155;
+      color: #f1f5f9;
+    }
+
+    pre {
+      background: var(--log-bg);
+      color: var(--log-fg);
+      padding: 12px;
+      overflow: auto;
+      max-height: 400px;
+      border-radius: 6px;
+      white-space: pre-wrap;
+      font-family: "JetBrains Mono", monospace;
+      font-size: 0.85rem;
+    }
+
+    .save-status {
+      font-weight: 500;
+      margin-top: 6px;
+    }
   </style>
 </head>
-<body>
-  <h1>App Dashboard</h1>
+<body data-theme="light">
+  <header>
+    <h1>📊 App Dashboard</h1>
+    <button id="theme-toggle" class="theme-toggle">🌙 Dark</button>
+  </header>
 
   <div class="panel">
-    <h3>Prompt Editor</h3>
+    <h3>🧠 Prompt Editor</h3>
     <div class="presets">
       <strong>Presets:</strong>
       {% for key, val in presets.items() %}
         <button data-preset="{{ key }}" class="btn-preset">{{ key.replace('_', ' ').title() }}</button>
       {% endfor %}
     </div>
-    <p>Current prompt (edit and Save):</p>
-    <textarea id="prompt-text"></textarea>
+
+    <p>Current prompt (edit and save):</p>
+    <textarea id="prompt-text" placeholder="Type your base prompt here..."></textarea>
+
     <div style="margin-top:8px;">
-      <button id="save-btn">Save Prompt</button>
-      <button id="reload-btn">Reload from disk</button>
+      <button id="save-btn">💾 Save Prompt</button>
+      <button id="reload-btn">🔄 Reload from Disk</button>
     </div>
-    <div id="save-msg" style="margin-top:8px;color:green;"></div>
+    <div id="save-msg" class="save-status"></div>
   </div>
 
   <div class="panel">
-    <h3>App Logs</h3>
-    <label>Lines: <input id="log-lines" type="number" value="200" style="width:80px" /></label>
-    <button id="refresh-logs">Refresh</button>
+    <h3>📜 Application Logs</h3>
+    <label>Lines:
+      <input id="log-lines" type="number" value="200" style="width:80px; border-radius:6px; padding:4px;" />
+    </label>
+    <button id="refresh-logs">🔁 Refresh Logs</button>
     <pre id="logs-pre">Loading logs...</pre>
   </div>
 
+  <script>
+    // Theme toggle
+    const toggle = document.getElementById("theme-toggle");
+    const body = document.body;
+    toggle.addEventListener("click", () => {
+      const isDark = body.dataset.theme === "dark";
+      body.dataset.theme = isDark ? "light" : "dark";
+      toggle.textContent = isDark ? "🌙 Dark" : "☀️ Light";
+    });
+  </script>
   <script src="/dashboard/static/dashboard.js"></script>
 </body>
 </html>
